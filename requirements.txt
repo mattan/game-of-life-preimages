@@ -1,0 +1,10 @@
+# No external packages required - using standard library only
+# Python 3.6+ recommended
+
+# Required packages
+pywhatkit==5.4
+numpy>=1.22.0
+matplotlib>=3.3.0
+scipy>=1.5.0
+streamlit>=1.22.0
+python-sat>=0.1.7.dev20
