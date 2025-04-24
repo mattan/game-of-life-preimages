@@ -2,6 +2,9 @@ import itertools
 from collections import deque
 import time
 
+# Import solvers from solvers package
+from solvers import ALL_SOLVERS, BEST_SOLVER
+
 class Cats:
     def __init__(self, state):
         self.state = state
@@ -112,72 +115,117 @@ class Cats:
                         print(f"      -> next {j+1}: mice={nmice}, cats={ncats}, turn={'cat' if nturn==1 else 'mouse'}, score={nscore}")
         print("----------------------")
         
-    def generic_solver(self, start_state, get_next_states, is_caught):
+    def generic_solver(self, start_state, get_next_states, is_caught, solvers=None):
+        """
+        Generic solver that uses multiple solver implementations to find a solution.
+        
+        Parameters:
+        -----------
+        start_state : tuple
+            A tuple containing (mice_pos, cats_pos, turn, blocks, m, n)
+        get_next_states : function
+            Function that returns possible next states
+        is_caught : function
+            Function that checks if mice are caught
+        solvers : list
+            List of solver functions to use. Each function should accept
+            (visited, get_next_states, board, is_caught) as parameters.
+            If None, default solvers will be used.
+            
+        Returns:
+        --------
+        float
+            The solution score, or None if no solution
+        """
+        # Default solvers if none provided
+        if solvers is None:
+            solvers = ALL_SOLVERS
+        
         queue = deque()
-        self.last_visited = visited = dict()
+        visited = dict()
         mice_pos, cats_pos, turn, blocks, m, n = start_state
         result_state = (mice_pos, cats_pos, turn)
         visited[result_state] = float('inf')
-
-        # מדידת זמן עבור הפונקציה המהירה עם pop (LIFO)
-        start_time_fast = time.time()
-        visited_fast = self.check_visited_consistency_fast(visited.copy(), get_next_states, blocks, m, n, is_caught, use_popleft=False)
-        end_time_fast = time.time()
-        fast_duration = end_time_fast - start_time_fast
         
-        # מדידת זמן עבור הפונקציה המהירה עם popleft (FIFO)
-        start_time_fast_popleft = time.time()
-        visited_fast_popleft = self.check_visited_consistency_fast(visited.copy(), get_next_states, blocks, m, n, is_caught, use_popleft=True)
-        end_time_fast_popleft = time.time()
-        fast_popleft_duration = end_time_fast_popleft - start_time_fast_popleft
+        # Combine blocks, m, n into a board tuple for the solver interface
+        board = (blocks, m, n)
         
-        # מדידת זמן עבור הפונקציה האיטית
-        start_time_slow = time.time()
-        self.check_visited_consistency(visited, get_next_states, blocks, m, n, is_caught)
-        end_time_slow = time.time()
-        slow_duration = end_time_slow - start_time_slow
+        # Dictionary to store results from each solver
+        results = {}
+        durations = {}
         
-        # הדפסת משכי זמן הריצה
-        print(f"Fast consistency check (pop/LIFO) duration: {fast_duration:.4f} seconds")
-        print(f"Fast consistency check (popleft/FIFO) duration: {fast_popleft_duration:.4f} seconds")
-        print(f"Slow consistency check duration: {slow_duration:.4f} seconds")
+        # Run each solver and measure time
+        for solver_name, solver_func in solvers:
+            self.last_visited = visited_copy = visited.copy()
+            start_time = time.time()
+            
+            if solver_name == "slow":
+                visited_result, consistency_loops = solver_func(visited_copy, get_next_states, board, is_caught)
+                print(f"consistency_loops={consistency_loops}")
+            else:
+                visited_result = solver_func(visited_copy, get_next_states, board, is_caught)
+                
+            end_time = time.time()
+            duration = end_time - start_time
+            
+            results[solver_name] = visited_result
+            durations[solver_name] = duration
+            
+            print(f"{solver_name} solver duration: {duration:.4f} seconds")
         
-        # השוואה בין pop ל-popleft
-        if fast_duration == 0 or fast_popleft_duration == 0:
-            print("One or both algorithms ran too quickly to measure differences (0s)")
-        elif fast_duration > fast_popleft_duration:
-            print(f"LIFO is slower than FIFO by {(fast_duration/fast_popleft_duration - 1)*100:.2f}%")
-        else:
-            print(f"LIFO is faster than FIFO by {(fast_popleft_duration/fast_duration - 1)*100:.2f}%")
+        # Print performance comparisons
+        for i, (solver1_name, _) in enumerate(solvers):
+            for solver2_name, _ in solvers[i+1:]:
+                duration1 = durations[solver1_name]
+                duration2 = durations[solver2_name]
+                
+                if duration1 == 0 or duration2 == 0:
+                    print(f"One or both algorithms ({solver1_name}, {solver2_name}) ran too quickly to measure differences (0s)")
+                elif duration1 > duration2:
+                    print(f"{solver1_name} is slower than {solver2_name} by {(duration1/duration2 - 1)*100:.2f}%")
+                else:
+                    print(f"{solver1_name} is faster than {solver2_name} by {(duration2/duration1 - 1)*100:.2f}%")
         
-        # בדיקה שהפונקציה המהירה אכן מהירה יותר
-        faster_fast_duration = min(fast_duration, fast_popleft_duration)
-        if faster_fast_duration > slow_duration:
-            print(f"WARNING: Even the faster algorithm ({faster_fast_duration:.4f}s) is slower than slow algorithm ({slow_duration:.4f}s)")
-            # בדיקה אם היחס גדול משמעותית
-            if faster_fast_duration > slow_duration * 1.2:  # אם הפונקציה המהירה איטית ב-20% או יותר
-                print(f"PERFORMANCE WARNING: Fast algorithm ({faster_fast_duration:.4f}s) is significantly slower than slow algorithm ({slow_duration:.4f}s)")
-
-        # בדיקת עקביות התוצאות
-        result_score = visited.get(result_state)
-        result_score_fast = visited_fast.get(result_state)
-        result_score_fast_popleft = visited_fast_popleft.get(result_state)
+        # Check for consistency across results
+        result_scores = {name: results[name].get(result_state, float('inf')) for name in results}
+        print("\nResults from all solvers:")
+        for name, score in result_scores.items():
+            print(f"  {name} solver score: {score}")
         
-        print(f"correct score (slow)={result_score}")
-        print(f"correct score fast (LIFO)={result_score_fast}")
-        print(f"correct score fast (FIFO)={result_score_fast_popleft}")
-
-        if result_score != result_score_fast or result_score != result_score_fast_popleft:
-            print(f"WARNING: Inconsistency detected: slow={result_score}, fast_LIFO={result_score_fast}, fast_FIFO={result_score_fast_popleft}")
-            print("Using slow algorithm's result as the correct one.")
-
-        self.last_visited = visited  # <--- save visited for later use
-        return (result_score -1 )/2
+        # Check for inconsistencies
+        # Use the slow solver as reference if available, otherwise use the first solver
+        reference_name = "slow" if "slow" in result_scores else list(result_scores.keys())[0]
+        reference_score = result_scores[reference_name]
+        inconsistencies = [name for name, score in result_scores.items() if score != reference_score]
+        
+        if inconsistencies:
+            print(f"\nWARNING: Inconsistencies detected in solvers: {', '.join(inconsistencies)}")
+            print(f"Using {reference_name} solver's result ({reference_score}) as the correct one.")
+        
+        # Store the results from the reference solver
+        self.last_visited = results[reference_name]
+        
+        return (reference_score - 1) / 2
 
     def solve(self, turn=0):
+        """
+        Solve the cats game starting with the given turn.
+        
+        Parameters:
+        -----------
+        turn : int
+            0 for mice's turn, 1 for cats' turn
+            
+        Returns:
+        --------
+        float
+            The solution score, or None if no solution
+        """
         mice, cats, blocks, m, n = self.parse_state()
         start_state = (mice, cats, turn, blocks, m, n)
-        result = self.generic_solver(start_state, self.get_next_states, self.is_caught)
+        
+        # Use all available solvers from the solvers package
+        result = self.generic_solver(start_state, self.get_next_states, self.is_caught, BEST_SOLVER)
 
         if result == float('inf'):
             result = None
@@ -189,125 +237,17 @@ class Cats:
 
         return result
 
-    def check_visited_consistency(self, visited, get_next_states, blocks, m, n, is_caught):
-        """
-        בודקת ומתקנת עבור כל מצב ב-visited האם הערך שלו הוא אכן המקסימום/מינימום של כל המצבים הבאים (אם כולם קיימים ב-visited).
-        ממשיכה בלולאה עד שאין יותר אי-התאמות.
-        סופרת כמה איטרציות נדרשו.
-        """
-        self.consistency_loops = 0
-        fixed = True
-        while fixed:
-            self.consistency_loops += 1
-            fixed = False
-            for state, score in list(visited.items()):
-                mice, cats, turn = state
-                if is_caught(mice, cats):
-                    if score != 1:
-                        visited[state] = 1
-                        fixed = True
-                    continue
-                next_states = get_next_states(mice, cats, turn, blocks, m, n)
-                next_scores = []
-                all_in_visited = True
-                for next_state in next_states:
-                    nmice, ncats, nturn = next_state
-                    nstate = (nmice, ncats, nturn)
-                    if nstate in visited:
-                        next_scores.append(visited[nstate])
-                    else:
-                        visited[nstate] = float('inf')  # הוסף מצבים חסרים
-                        fixed = True
-                        all_in_visited = False
-                if not all_in_visited or not next_scores:
-                    continue  # לא בודקים מצבים לא שלמים
-                expected = max(next_scores) if turn == 0 else min(next_scores)
-                expected += 1
-                if score != expected:
-                    visited[state] = expected
-                    fixed = True
-        print(f"consistency_loops={self.consistency_loops}")
-
     def get_last_visited(self):
-        return getattr(self, 'last_visited', None)
-
-    def check_visited_consistency_fast(self, visited, get_next_states, blocks, m, n, is_caught, use_popleft=False):
-        """
-        גרסה מהירה עם תור ומבנה אובייקט לכל מצב ב-visited.
-        visited: מילון שבו המפתחות הם מצבים (tuple) והערכים הם מספרים (score)
-        הפונקציה לא משנה את visited המקורי, אלא בונה visited חדש עם אובייקטים.
-        
-        Parameters:
-        -----------
-        use_popleft : bool
-            אם True, ישתמש ב-popleft (FIFO) במקום ב-pop (LIFO) להוצאת איברים מהתור.
-        """
-        # Initialize debug print control
-        self.need_print = False
-        nodes = {}
-        
-        # מבנה האובייקט לכל מצב
-        class Node:
-            def __init__(self, key, turn):
-                self.key = key
-                self.score = float('inf')
-                self.parents = []
-                self.children = []
-                self.is_updated = False
-                self.did_call_get_next_states = False
-                self.turn = turn
-            
-            def update(self):
-                expected = max([child.score for child in self.children], default=0) if self.turn == 0 else min([child.score for child in self.children], default=0)
-                expected += 1
-                if expected != self.score:
-                    self.is_updated = True
-                self.score = expected
-            
-            def __repr__(self):
-                return f"Node(key={self.key}, score={self.score}, is_updated={self.is_updated}, did_call_get_next_states={self.did_call_get_next_states})"
-            
-        # יצירת visited חדש
-        nodes = {}
-        for state in visited.keys():
-            # נניח ש-state = (mice, cats, turn)
-            turn = state[2]
-            node = Node(state, turn)
-            nodes[state] = node
-        # תור ראשוני
-        queue = deque(nodes.values())
-        while queue:
-            # בוחר אם להשתמש ב-popleft (FIFO) או ב-pop (LIFO)                   
-            x = queue.popleft() if use_popleft else queue.pop()
-            if not x.did_call_get_next_states:
-                x.did_call_get_next_states = True
-                mice, cats, turn = x.key
-                if is_caught(mice, cats):
-                    next_states = []
-                else:
-                    next_states = get_next_states(mice, cats, turn, blocks, m, n)
-                for y_key in next_states:
-                    if y_key not in nodes:
-                        y_turn = y_key[2]
-                        y = Node(y_key, y_turn)
-                        nodes[y_key] = y     
-                        queue.append(y)  
-                    else:
-                        y = nodes[y_key]
-                    x.children.append(y)
-                    y.parents.append(x)
-                x.update()
-
-            # עדכון הורים אם X התעדכן
-            if x.is_updated:
-                x.is_updated = False
-                for parent in x.parents:
-                    parent.update()
-                    queue.append(parent)
-
-        # הפקת מילון תוצאה
-        result = {k: node.score for k, node in nodes.items()}
-        return result
+        """Return the last visited dictionary from the most recent solver run."""
+        visited = getattr(self, 'last_visited', None)
+        if visited and '_nodes' in visited:
+            # Extract the nodes data and make it available separately
+            self._nodes = visited.pop('_nodes')
+            # Add any missing states from nodes to visited
+            for key, node in self._nodes.items():
+                if key not in visited:
+                    visited[key] = node.score
+        return visited
 
 
 

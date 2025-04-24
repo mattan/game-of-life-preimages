@@ -1,12 +1,18 @@
+import pygame
 import tkinter as tk
 from tkinter import messagebox
 from cats import Cats
 import threading
 import time
+from typing import List, Union
+from solvers.fast_solver import Node
 
 CELL_SIZE = 40
-GRID_ROWS = 6
-GRID_COLS = 6
+#GRID_ROWS = 6
+#GRID_COLS = 6
+GRID_ROWS = 10
+GRID_COLS = 10
+
 
 class BoardEditor(tk.Frame):
     def __init__(self, master=None):
@@ -161,8 +167,8 @@ class BoardEditor(tk.Frame):
                 self._solve_start_time = time.time()
                 def update_progress():
                     if hasattr(cats_solver, 'last_visited') and cats_solver.last_visited is not None:
-                        values = list(cats_solver.last_visited.values())
-                        n_not_inf = sum(1 for v in values if v != float('inf'))
+                        values:List[Union[float, Node]] = list(cats_solver.last_visited.values())
+                        n_not_inf = sum(1 for v in values if isinstance(v, (int, float)) and v != float('inf') or hasattr(v, 'score') and v.score != float('inf'))
                         elapsed = int(time.time() - self._solve_start_time)
                         self.progress_label.config(text=f'States explored: {len(cats_solver.last_visited)} ({n_not_inf} not inf) | Time: {elapsed}s')
                     else:
@@ -186,8 +192,9 @@ class BoardEditor(tk.Frame):
                 self.after(0, update_ui)
             except Exception as e:
                 self._solver_running = False
+                error_message = str(e)  # Store the error message in a local variable
                 self.after(0, lambda: self.progress_label.config(text=''))
-                self.after(0, lambda: messagebox.showerror('Error', f'Failed to solve: {e}'))
+                self.after(0, lambda: messagebox.showerror('Error', f'Failed to solve: {error_message}'))
         threading.Thread(target=run_solver, daemon=True).start()
 
     def back_to_original(self):
@@ -210,7 +217,8 @@ class BoardEditor(tk.Frame):
         scores = []
         for next_state in next_states:
             nmice, ncats, nturn = next_state
-            score = visited.get((nmice, ncats, nturn), None)
+            value = visited.get((nmice, ncats, nturn), None)
+            score = value if isinstance(value, (int, float)) else (value.score if hasattr(value, 'score') else None)
             if score is not None and score != float('inf'):
                 scores.append(score)
         if not scores:
@@ -229,13 +237,14 @@ class BoardEditor(tk.Frame):
                 if not moved:
                     for pos in old:
                         y, x = pos
-                        score = visited.get((nmice, ncats, nturn), None)
-                        if score is None or score == float('inf'):
-                            text = '∞'
-                            color = 'red'
-                        else:
+                        value = visited.get((nmice, ncats, nturn), None)
+                        score = value if isinstance(value, (int, float)) else (value.score if hasattr(value, 'score') else None)
+                        if score is not None and not(isinstance(score, (int, float)) and score == float('inf') or hasattr(score, 'score') and score.score == float('inf')):
                             text = f'{(score-1)/2:.1f}'
                             color = 'green' if best_score is not None and score == best_score else 'red'
+                        else:
+                            text = '∞'
+                            color = 'red'
                         x1, y1 = x*CELL_SIZE, y*CELL_SIZE
                         # Draw circle background
                         self.canvas.create_oval(x1+CELL_SIZE-22, y1+CELL_SIZE-22, x1+CELL_SIZE-2, y1+CELL_SIZE-2, fill=color, outline='black')
@@ -248,8 +257,9 @@ class BoardEditor(tk.Frame):
                 if not moved:
                     for pos in old:
                         y, x = pos
-                        score = visited.get((nmice, ncats, nturn), None)
-                        if score is None or score == float('inf'):
+                        value = visited.get((nmice, ncats, nturn), None)
+                        score = value if isinstance(value, (int, float)) else (value.score if hasattr(value, 'score') else None)
+                        if score is None or (isinstance(score, (int, float)) and score == float('inf') or hasattr(score, 'score') and score.score == float('inf')):
                             text = '∞'
                             color = 'red'
                         else:
@@ -260,8 +270,9 @@ class BoardEditor(tk.Frame):
                         self.canvas.create_text(x1+CELL_SIZE-12, y1+CELL_SIZE-12, text=text, anchor='center', font=('Arial', 8), fill='white')
                     continue
             y, x = moved[0]
-            score = visited.get((nmice, ncats, nturn), None)
-            if score is None or score == float('inf'):
+            value = visited.get((nmice, ncats, nturn), None)
+            score = value if isinstance(value, (int, float)) else (value.score if hasattr(value, 'score') else None)
+            if score is None or (isinstance(score, (int, float)) and score == float('inf') or hasattr(score, 'score') and score.score == float('inf')):
                 text = '∞'
                 color = 'red'
             else:
@@ -292,12 +303,14 @@ class BoardEditor(tk.Frame):
                 if not moved:
                     for pos in old:
                         move_desc = f"M: {pos} → {pos} (stay)"
-                        score = visited.get((nmice, ncats, nturn), None)
+                        value = visited.get((nmice, ncats, nturn), None)
+                        score = value if isinstance(value, (int, float)) else (value.score if hasattr(value, 'score') else None)
                         scores.append(score)
                         moves.append((move_desc, score, next_state))
                 else:
                     move_desc = f"M: {list(old - new)[0]} → {moved[0]}"
-                    score = visited.get((nmice, ncats, nturn), None)
+                    value = visited.get((nmice, ncats, nturn), None)
+                    score = value if isinstance(value, (int, float)) else (value.score if hasattr(value, 'score') else None)
                     scores.append(score)
                     moves.append((move_desc, score, next_state))
             else:
@@ -307,12 +320,14 @@ class BoardEditor(tk.Frame):
                 if not moved:
                     for pos in old:
                         move_desc = f"C: {pos} → {pos} (stay)"
-                        score = visited.get((nmice, ncats, nturn), None)
+                        value = visited.get((nmice, ncats, nturn), None)
+                        score = value if isinstance(value, (int, float)) else (value.score if hasattr(value, 'score') else None)
                         scores.append(score)
                         moves.append((move_desc, score, next_state))
                 else:
                     move_desc = f"C: {list(old - new)[0]} → {moved[0]}"
-                    score = visited.get((nmice, ncats, nturn), None)
+                    value = visited.get((nmice, ncats, nturn), None)
+                    score = value if isinstance(value, (int, float)) else (value.score if hasattr(value, 'score') else None)
                     scores.append(score)
                     moves.append((move_desc, score, next_state))
         # Sort moves by score (best for current player first)
@@ -324,7 +339,7 @@ class BoardEditor(tk.Frame):
             # Cat wants min
         # Find best score
         best_score = None
-        filtered_scores = [s for s in scores if s is not None and s != float('inf')]
+        filtered_scores = [s for s in scores if s is not None and (isinstance(s, (int, float)) and s != float('inf') or hasattr(s, 'score') and s.score != float('inf'))]
         if filtered_scores:
             if turn == 0:
                 best_score = max(filtered_scores)
@@ -332,7 +347,7 @@ class BoardEditor(tk.Frame):
                 best_score = min(filtered_scores)
         self._move_state_map = []
         for i, (move_desc, score, state) in enumerate(moves):
-            score_str = '∞' if score is None or score == float('inf') else f'{(score-1)/2:.1f}'
+            score_str = '∞' if score is None or (isinstance(score, (int, float)) and score == float('inf') or hasattr(score, 'score') and score.score == float('inf')) else f'{(score-1)/2:.1f}'
             self.move_listbox.insert(tk.END, f"{move_desc} | {score_str}")
             # Color the item
             color = 'green' if best_score is not None and score == best_score else 'red'
