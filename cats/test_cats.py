@@ -71,3 +71,4 @@ class TestsCat(unittest.TestCase):
                 """)
         no_of_moves = c.solve()
         self.assertEqual(no_of_moves,None)
+
